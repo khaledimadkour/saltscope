@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SaltScope – Soil salinity prototype</title>
+  <meta name="description" content="Draw a field on the map and check the soil salinity at its center using Sentinel-2 satellite imagery. Prototype made by Khaled Islam and Mohammed Waleed.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="vendor/fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="vendor/leaflet-draw/leaflet.draw.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-phase="idle">
+  <div class="app">
+
+    <header class="brand">
+      <div class="brand-row">
+        <svg class="logo" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">
+          <rect x="6" y="6" width="20" height="20" rx="3" transform="rotate(45 16 16)" fill="#0e2a31"/>
+          <circle cx="16" cy="16" r="4" fill="none" stroke="#f3f6f5" stroke-width="2"/>
+          <path d="M16 7.5v4M16 20.5v4M7.5 16h4M20.5 16h4" stroke="#f3f6f5" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <h1 class="wordmark">SaltScope</h1>
+        <span class="badge">Prototype / Test</span>
+      </div>
+      <p class="tagline">Draw a field on the map. SaltScope checks the soil salinity at its center using Sentinel-2 satellite imagery.</p>
+    </header>
+
+    <main class="stage">
+      <div id="map" role="application" aria-label="Map. Use the drawing tools in the side panel to mark an area."></div>
+      <div class="basemap" role="group" aria-label="Map style">
+        <button type="button" data-base="satellite" aria-pressed="true">Satellite</button>
+        <button type="button" data-base="streets" aria-pressed="false">Streets</button>
+      </div>
+    </main>
+
+    <aside class="controls" aria-label="Controls">
+
+      <div class="notice" id="notice" role="alert" hidden>
+        <p id="noticeText"></p>
+      </div>
+
+      <ol class="steps">
+
+        <li class="step" id="stepArea" data-state="active">
+          <span class="step-mark" aria-hidden="true">1</span>
+          <h2 class="step-title">Mark your area</h2>
+          <div class="tools" role="group" aria-label="Drawing tools">
+            <button type="button" class="tool" data-tool="circle" aria-pressed="false">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>
+              <span>Circle</span>
+            </button>
+            <button type="button" class="tool" data-tool="polygon" aria-pressed="false">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><polygon points="5,19 3,9 12,3 21,8 18,20"/></svg>
+              <span>Polygon</span>
+            </button>
+            <button type="button" class="tool" data-tool="rectangle" aria-pressed="false">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
+              <span>Rectangle</span>
+            </button>
+          </div>
+          <p class="hint" id="drawHint">Pick a shape, then draw it around your field.</p>
+          <button type="button" class="link-btn" id="clearBtn" hidden>Clear area</button>
+        </li>
+
+        <li class="step" id="stepCenter" data-state="todo">
+          <span class="step-mark" aria-hidden="true">2</span>
+          <h2 class="step-title">Center point</h2>
+          <dl class="coords">
+            <dt>Latitude</dt>
+            <dd id="latValue">–</dd>
+            <dt>Longitude</dt>
+            <dd id="lonValue">–</dd>
+          </dl>
+          <p class="area-meta" id="areaMeta">The center appears here once you draw an area.</p>
+          <p class="area-note" id="areaNote" hidden></p>
+          <button type="button" class="btn btn-small" id="copyBtn" disabled>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+            <span id="copyLabel">Copy coordinates</span>
+          </button>
+        </li>
+
+        <li class="step" id="stepScan" data-state="todo">
+          <span class="step-mark" aria-hidden="true">3</span>
+          <h2 class="step-title">Check salinity</h2>
+          <div class="field">
+            <label for="daysSelect">Imagery window</label>
+            <select id="daysSelect">
+              <option value="30">Last 30 days</option>
+              <option value="60">Last 60 days</option>
+              <option value="90" selected>Last 90 days</option>
+              <option value="180">Last 180 days</option>
+            </select>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn btn-primary" id="startBtn" disabled>
+              <span id="startLabel">Start salinity scan</span>
+            </button>
+            <button type="button" class="btn btn-secondary" id="refreshBtn" disabled>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </li>
+
+      </ol>
+
+      <section class="reading" id="reading" data-state="idle" data-level="0" aria-labelledby="readingTitle">
+        <h2 class="section-title" id="readingTitle">Salinity status</h2>
+
+        <div class="status-line" role="status">
+          <p class="status-label">
+            <span class="spinner" id="spinner" hidden></span>
+            <span id="statusText">No area yet</span>
+            <span class="dots" id="dots" aria-hidden="true" hidden><i></i><i></i><i></i></span>
+          </p>
+          <p class="status-sub" id="statusSub">Draw an area on the map to begin.</p>
+        </div>
+
+        <div class="strip-wrap" id="stripWrap" hidden>
+          <div class="strip">
+            <span></span><span></span><span></span><span></span><span></span>
+            <b class="strip-marker" id="marker"></b>
+          </div>
+          <div class="strip-ends"><span>Low salinity</span><span>High salinity</span></div>
+        </div>
+
+        <p class="status-note" id="statusNote" hidden></p>
+
+        <dl class="facts" id="facts" hidden>
+          <dt>Data reliability</dt>
+          <dd><span class="rel-dot" id="relDot"></span><span id="relText"></span></dd>
+          <dt>Area scanned</dt>
+          <dd id="factArea"></dd>
+          <dt>Imagery</dt>
+          <dd id="factImagery"></dd>
+          <dt>Updated</dt>
+          <dd id="factUpdated"></dd>
+        </dl>
+
+        <details class="details" id="details" hidden>
+          <summary>Spectral details</summary>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Index</th>
+                <th scope="col">This area</th>
+                <th scope="col">Low sites</th>
+                <th scope="col">High sites</th>
+              </tr>
+            </thead>
+            <tbody id="indexRows"></tbody>
+          </table>
+          <dl class="facts facts-tight">
+            <dt>Distance to low sites</dt>
+            <dd id="distLow"></dd>
+            <dt>Distance to high sites</dt>
+            <dd id="distHigh"></dd>
+            <dt>Reference sites</dt>
+            <dd id="refCounts"></dd>
+          </dl>
+        </details>
+
+        <p class="caveat">The percentage shows how closely this area's spectrum matches the high-salinity reference sites. It is not a measured salt concentration (ECe, dS/m).</p>
+      </section>
+
+      <section class="advice" id="advice" aria-labelledby="adviceTitle" hidden>
+        <h2 class="section-title" id="adviceTitle">Soil advice</h2>
+        <p class="advice-intro" id="adviceIntro">Ask AI how to improve this soil and which crops suit this location and season.</p>
+        <button type="button" class="btn btn-primary btn-wide" id="adviceBtn">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z"/></svg>
+          <span id="adviceBtnLabel">Get soil advice</span>
+        </button>
+
+        <div class="advice-status" id="adviceStatus" role="status" hidden>
+          <span class="spinner" id="adviceSpinner" hidden></span>
+          <p id="adviceStatusText"></p>
+        </div>
+
+        <div class="advice-body" id="adviceBody" hidden>
+          <p class="advice-assessment" id="adviceAssessment"></p>
+
+          <h3 class="sub-title">How to improve this soil</h3>
+          <ol class="advice-steps" id="adviceSteps"></ol>
+
+          <h3 class="sub-title" id="cropsTitle">Best crops to grow now</h3>
+          <p class="crops-context" id="cropsContext"></p>
+          <ul class="crops" id="adviceCrops"></ul>
+
+          <p class="advice-caution" id="adviceCaution"></p>
+          <p class="fine" id="adviceMeta"></p>
+        </div>
+      </section>
+
+      <footer class="credits">
+        <p class="byline">Made by Khaled Islam and Mohammed Waleed</p>
+        <p class="fine">Prototype for testing. Satellite data from Copernicus Sentinel-2. Base maps from Esri and OpenStreetMap contributors.</p>
+      </footer>
+
+    </aside>
+  </div>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="vendor/leaflet-draw/leaflet.draw.js"></script>
+  <script src="geo.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
